@@ -285,6 +285,36 @@
         </button>
       </div>
 
+      <!-- BULLETINS FRANCE AUTO (PAYSAGE & TIKTOK) -->
+      <div class="wf-card" style="border: 1px solid rgba(255, 90, 36, 0.4); background: rgba(255, 90, 36, 0.03);">
+        <div class="wf-info">
+          <div class="wf-repo-badge" style="color: #ff5a24;"><i class="fa-brands fa-github"></i> europe-1-v2</div>
+          <div class="wf-title" style="color: #ff5a24;">📺 Bulletins France J+1 (Paysage 16:9 &amp; TikTok 9:16)</div>
+          <div class="wf-desc">Génère les bulletins météo nationaux quotidiens officiels à J+1 au double format : <strong>Paysage 16:9 Broadcast</strong> et <strong>TikTok / Shorts 9:16</strong>. Voix IA de présentateur TV Charon (Gemini 3.8 Flash TTS), cartes officielles Météo-France et e-mail automatique envoyé à Patrick (avec Grégory en copie) avec liens de téléchargement direct.</div>
+          <div style="font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,0.4); display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px;">
+            <span><i class="fa-solid fa-stopwatch" style="color:#00c6ff; margin-right:4px;"></i> Durée : ~6 min</span>
+            <span><i class="fa-solid fa-envelope" style="color:#66bb6a; margin-right:4px;"></i> Mail direct</span>
+            <span><i class="fa-solid fa-microphone-lines" style="color:#ffcc00; margin-right:4px;"></i> Gemini 3.8 Flash TTS</span>
+          </div>
+
+          <div style="margin-top: 6px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px;">
+            <label style="font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.7);">Mode :</label>
+            <select id="mode-bulletin-france-patrick" style="background: rgba(4,11,24,0.85); border: 1px solid rgba(255,90,36,0.3); border-radius: 8px; color: #fff; padding: 6px 12px; font-size: 12px; font-family: inherit; outline: none;">
+              <option value="grand_public" selected>🌤️ Grand Public (Sorties &amp; Températures)</option>
+              <option value="btp">🏗️ BTP Pro (Chantiers &amp; Recommandations)</option>
+              <option value="both">🎬 Les Deux (Grand Public + BTP)</option>
+            </select>
+          </div>
+
+          <div class="wf-last-run" id="run-europe-1-v2__bulletins_france_auto">
+            <span class="run-dot dot-unknown"></span> Chargement…
+          </div>
+        </div>
+        <button class="btn btn-trigger" onclick="triggerBulletinFrancePatrick(this)">
+          <i class="fa-solid fa-play"></i> Lancer
+        </button>
+      </div>
+
       <!-- CARTES DE VIGILANCE MF -->
       <div class="wf-card">
         <div class="wf-info">
@@ -437,7 +467,8 @@
       { repo: 'veille-automation',    file: 'bilan_journalier.yml',   id: 'veille-automation__bilan_journalier' },
       { repo: 'veille-automation',    file: 'bilan_journalier_npdc.yml', id: 'veille-automation__bilan_journalier_npdc' },
       { repo: 'veille-automation',    file: 'veille_intemperies.yml', id: 'veille-automation__veille_intemperies' },
-      { repo: 'bilan-national-france',file: 'bilan_national.yml',     id: 'bilan-national-france__bilan_national' }
+      { repo: 'bilan-national-france',file: 'bilan_national.yml',     id: 'bilan-national-france__bilan_national' },
+      { owner: 'mto-user84925', repo: 'europe-1-v2', file: 'bulletins_france_auto.yml', id: 'europe-1-v2__bulletins_france_auto' }
     ];
 
     function getToken() {
@@ -512,9 +543,10 @@
     async function fetchRunStatus(wf, token) {
       const el = document.getElementById('run-' + wf.id);
       if (!el) return;
+      const repoOwner = wf.owner || OWNER;
       try {
         const r = await fetch(
-          `https://api.github.com/repos/${OWNER}/${wf.repo}/actions/workflows/${wf.file}/runs?per_page=1`,
+          `https://api.github.com/repos/${repoOwner}/${wf.repo}/actions/workflows/${wf.file}/runs?per_page=1`,
           { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' } }
         );
         if (!r.ok) { el.innerHTML = '<span class="run-dot dot-unknown"></span> Erreur API'; return; }
@@ -540,10 +572,11 @@
       }
     }
 
-    async function isRunInProgress(repo, workflowFile, token) {
+    async function isRunInProgress(repo, workflowFile, token, customOwner = null) {
+      const repoOwner = customOwner || (repo === 'europe-1-v2' ? 'mto-user84925' : OWNER);
       try {
         const r = await fetch(
-          `https://api.github.com/repos/${OWNER}/${repo}/actions/workflows/${workflowFile}/runs?status=in_progress&per_page=1`,
+          `https://api.github.com/repos/${repoOwner}/${repo}/actions/workflows/${workflowFile}/runs?status=in_progress&per_page=1`,
           { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' } }
         );
         const data = await r.json();
@@ -551,16 +584,17 @@
       } catch(e) { return false; }
     }
 
-    async function triggerWf(btn, repo, workflowFile) {
+    async function triggerWf(btn, repo, workflowFile, customInputs = null, customOwner = null) {
       const token = getToken();
       if (!token) { showToast("Veuillez d'abord configurer votre clé d'accès !", 'error'); return; }
 
+      const repoOwner = customOwner || (repo === 'europe-1-v2' ? 'mto-user84925' : OWNER);
       const originalHTML = btn.innerHTML;
       btn.className = 'btn btn-trigger loading';
       btn.innerHTML = '<i class="fa-solid fa-circle-notch spinner"></i> Vérif…';
 
       // Vérifier si un run est déjà en cours
-      const running = await isRunInProgress(repo, workflowFile, token);
+      const running = await isRunInProgress(repo, workflowFile, token, repoOwner);
       if (running) {
         btn.className = 'btn btn-trigger';
         btn.innerHTML = originalHTML;
@@ -575,7 +609,11 @@
 
       try {
         let reqBody = { ref: 'main' };
-        if (workflowFile === 'daily_cnews_obs.yml' || 
+        if (customInputs) {
+          reqBody.inputs = { ...customInputs, triggered_by: 'patrick' };
+        } else if (workflowFile === 'bulletins_france_auto.yml') {
+          reqBody.inputs = { mode: 'grand_public', triggered_by: 'patrick' };
+        } else if (workflowFile === 'daily_cnews_obs.yml' || 
             workflowFile === 'test_vigilance_only.yml') {
           // Aucun input
         } else if (workflowFile === 'veille_quotidienne.yml') {
@@ -592,7 +630,7 @@
         }
 
         const response = await fetch(
-          `https://api.github.com/repos/${OWNER}/${repo}/actions/workflows/${workflowFile}/dispatches`,
+          `https://api.github.com/repos/${repoOwner}/${repo}/actions/workflows/${workflowFile}/dispatches`,
           {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
@@ -613,6 +651,12 @@
         btn.className = 'btn btn-trigger';
         btn.innerHTML = originalHTML;
       }
+    }
+
+    function triggerBulletinFrancePatrick(btn) {
+      const select = document.getElementById('mode-bulletin-france-patrick');
+      const selectedMode = select ? select.value : 'grand_public';
+      triggerWf(btn, 'europe-1-v2', 'bulletins_france_auto.yml', { mode: selectedMode }, 'mto-user84925');
     }
 
     function showToast(message, type = 'success') {
