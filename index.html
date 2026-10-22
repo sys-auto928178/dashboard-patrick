@@ -609,24 +609,54 @@
 
       try {
         let reqBody = { ref: 'main' };
-        if (customInputs) {
-          reqBody.inputs = { ...customInputs, triggered_by: 'patrick' };
-        } else if (workflowFile === 'bulletins_france_auto.yml') {
-          reqBody.inputs = { mode: 'grand_public', triggered_by: 'patrick' };
-        } else if (workflowFile === 'daily_cnews_obs.yml' || 
-            workflowFile === 'test_vigilance_only.yml') {
-          // Aucun input
-        } else if (workflowFile === 'veille_quotidienne.yml') {
-          reqBody.inputs = { type: 'all', triggered_by: 'patrick' };
-        } else if (workflowFile === 'twitter_monsieur_meteo.yml') {
-          reqBody.inputs = { mode: 'all', triggered_by: 'patrick' };
-        } else if (workflowFile === 'generate_all_14d_bulletins.yml' ||
-                   workflowFile === 'meteo_kappa_envoi.yml') {
-          reqBody.inputs = { test_mode: 'false', triggered_by: 'patrick' };
-        } else if (workflowFile === 'bilan_journalier.yml' || workflowFile === 'bilan_journalier_npdc.yml') {
-          reqBody.inputs = { test_mode: 'false' };
-        } else {
+        // ── RÈGLE D'OR : n'envoyer QUE les inputs déclarés dans le .yml cible.
+        // Tout input superflu => HTTP 422 Unprocessable Entity.
+        const ALLOWED_BY_WF = {
+          'daily_cnews_obs.yml':            [],
+          'test_vigilance_only.yml':        [],
+          'bulletins_france_auto.yml':      ['mode', 'triggered_by'],
+          'veille_quotidienne.yml':         ['type', 'triggered_by'],
+          'infoclimat_evolution.yml':       ['test_mode', 'triggered_by'],
+          'twitter_monsieur_meteo.yml':     ['mode'],
+          'generate_all_14d_bulletins.yml': ['test_mode'],
+          'meteo_kappa_envoi.yml':          ['test_mode'],
+          'meteo_kappa_analyse.yml':        ['test_mode'],
+          'bilan_journalier.yml':           ['date', 'region', 'test_mode', 'triggered_by'],
+          'bilan_journalier_npdc.yml':      ['date', 'region', 'test_mode', 'triggered_by'],
+          'bilan_journalier_naq.yml':       ['date', 'region', 'test_mode'],
+          'veille_intemperies.yml':         ['triggered_by'],
+          'meteo_kappa.yml':                ['triggered_by'],
+          'meteo_cnews_patrick.yml':        ['triggered_by'],
+          'vigilance_email.yml':            ['triggered_by'],
+          'vigilance_quotidienne.yml':      ['test_mode', 'triggered_by'],
+          'meteo_france_bulletins.yml':     ['test_mode', 'triggered_by'],
+          'bilan_national.yml':             ['date', 'triggered_by']
+        };
+
+        // Valeurs par défaut envoyées pour Patrick (production)
+        const defaults = {};
+        if (workflowFile === 'bulletins_france_auto.yml')   defaults.mode = 'grand_public';
+        if (workflowFile === 'veille_quotidienne.yml')      defaults.type = 'all';
+        if (workflowFile === 'twitter_monsieur_meteo.yml')  defaults.mode = 'all';
+        if (workflowFile === 'generate_all_14d_bulletins.yml' ||
+            workflowFile === 'meteo_kappa_envoi.yml' ||
+            workflowFile === 'meteo_kappa_analyse.yml' ||
+            workflowFile === 'bilan_journalier.yml' ||
+            workflowFile === 'bilan_journalier_npdc.yml' ||
+            workflowFile === 'vigilance_quotidienne.yml' ||
+            workflowFile === 'meteo_france_bulletins.yml')  defaults.test_mode = 'false';
+
+        const merged = { ...defaults, ...(customInputs || {}) };
+        const allowed = ALLOWED_BY_WF[workflowFile];
+        if (allowed === undefined) {
           reqBody.inputs = { triggered_by: 'patrick' };
+        } else {
+          const inputs = {};
+          for (const k of allowed) {
+            if (k === 'triggered_by') { inputs.triggered_by = 'patrick'; }
+            else if (merged[k] !== undefined) { inputs[k] = merged[k]; }
+          }
+          if (Object.keys(inputs).length > 0) reqBody.inputs = inputs;
         }
 
         const response = await fetch(
